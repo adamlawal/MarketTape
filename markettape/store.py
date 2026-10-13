@@ -7,7 +7,6 @@ from typing import Any
 
 import redis
 
-
 PUBLISH_LUA = """
 local previous = redis.call('HGET', KEYS[2], ARGV[1])
 if previous then
@@ -55,7 +54,9 @@ class TickStore:
         prefix = f"markettape:{{{symbol}}}"
         return f"{prefix}:seq", f"{prefix}:dedup", f"{prefix}:stream"
 
-    def publish(self, symbol: str, event_id: str, price: str, source_ts_ms: int) -> tuple[Tick, bool]:
+    def publish(
+        self, symbol: str, event_id: str, price: str, source_ts_ms: int
+    ) -> tuple[Tick, bool]:
         seq_key, dedup_key, stream_key = self.keys(symbol)
         raw_id, duplicate, sequence = self._publish(
             keys=[seq_key, dedup_key, stream_key],
@@ -67,7 +68,9 @@ class TickStore:
             if tick is None:
                 raise RuntimeError("Original stream entry was not found")
             return tick, True
-        return Tick(symbol, stream_id, int(sequence), event_id, price, source_ts_ms), False
+        return Tick(
+            symbol, stream_id, int(sequence), event_id, price, source_ts_ms
+        ), False
 
     def _one(self, symbol: str, stream_id: str) -> Tick | None:
         stream_key = self.keys(symbol)[2]
@@ -86,8 +89,9 @@ class TickStore:
         raw_id, raw_fields = item
         stream_id = raw_id.decode() if isinstance(raw_id, bytes) else str(raw_id)
         fields = {
-            (k.decode() if isinstance(k, bytes) else str(k)):
-            (v.decode() if isinstance(v, bytes) else str(v))
+            (k.decode() if isinstance(k, bytes) else str(k)): (
+                v.decode() if isinstance(v, bytes) else str(v)
+            )
             for k, v in raw_fields.items()
         }
         return Tick(

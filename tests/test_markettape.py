@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import concurrent.futures
 import shutil
-import sqlite3
 import socket
+import sqlite3
 import subprocess
 import time
 
@@ -12,8 +12,8 @@ import redis
 from fastapi.testclient import TestClient
 
 from markettape.app import create_app
-from markettape.store import TickStore
 from markettape.sink import SQLiteTickSink
+from markettape.store import TickStore
 
 
 def free_port() -> int:
@@ -25,9 +25,19 @@ def free_port() -> int:
 def start_redis(port: int, directory: str) -> subprocess.Popen[bytes]:
     process = subprocess.Popen(
         [
-            "redis-server", "--bind", "127.0.0.1", "--port", str(port),
-            "--save", "", "--appendonly", "yes", "--appendfsync", "always",
-            "--dir", directory,
+            "redis-server",
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--save",
+            "",
+            "--appendonly",
+            "yes",
+            "--appendfsync",
+            "always",
+            "--dir",
+            directory,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -63,10 +73,12 @@ def test_concurrent_writers_produce_gap_free_per_symbol_order(redis_service):
     url, _, _ = redis_service
     store = TickStore(redis.Redis.from_url(url))
     with concurrent.futures.ThreadPoolExecutor(max_workers=24) as pool:
-        published = list(pool.map(
-            lambda n: store.publish("BBG", f"event-{n}", str(100 + n), n),
-            range(500),
-        ))
+        published = list(
+            pool.map(
+                lambda n: store.publish("BBG", f"event-{n}", str(100 + n), n),
+                range(500),
+            )
+        )
     assert all(not duplicate for _, duplicate in published)
     ticks = store.replay("BBG", limit=1000)
     assert [tick.sequence for tick in ticks] == list(range(1, 501))
@@ -94,10 +106,15 @@ def test_http_ingest_and_websocket_replay(redis_service):
     url, _, _ = redis_service
     with TestClient(create_app(url)) as client:
         for number in range(3):
-            response = client.post("/v1/ticks", json={
-                "symbol": "AAPL", "event_id": f"tick-{number}",
-                "price": f"120.{number}", "source_ts_ms": number,
-            })
+            response = client.post(
+                "/v1/ticks",
+                json={
+                    "symbol": "AAPL",
+                    "event_id": f"tick-{number}",
+                    "price": f"120.{number}",
+                    "source_ts_ms": number,
+                },
+            )
             assert response.status_code == 200
         history = client.get("/v1/ticks/AAPL?limit=2").json()["ticks"]
         assert [tick["sequence"] for tick in history] == [1, 2]
@@ -105,10 +122,15 @@ def test_http_ingest_and_websocket_replay(redis_service):
             f"/v1/stream/AAPL?after={history[-1]['stream_id']}"
         ) as websocket:
             assert websocket.receive_json()["sequence"] == 3
-            client.post("/v1/ticks", json={
-                "symbol": "AAPL", "event_id": "tick-3", "price": "120.3",
-                "source_ts_ms": 3,
-            })
+            client.post(
+                "/v1/ticks",
+                json={
+                    "symbol": "AAPL",
+                    "event_id": "tick-3",
+                    "price": "120.3",
+                    "source_ts_ms": 3,
+                },
+            )
             assert websocket.receive_json()["sequence"] == 4
 
 
@@ -122,14 +144,18 @@ def test_aof_replay_after_unclean_redis_restart(redis_service, tmp_path):
     process.wait(timeout=5)
     replacement = start_redis(port, str(tmp_path))
     try:
-        recovered = TickStore(redis.Redis.from_url(url)).replay("MSFT", after=last_cursor)
+        recovered = TickStore(redis.Redis.from_url(url)).replay(
+            "MSFT", after=last_cursor
+        )
         assert [tick.sequence for tick in recovered] == list(range(2, 51))
     finally:
         replacement.terminate()
         replacement.wait(timeout=5)
 
 
-def test_sink_restarts_from_committed_cursor_without_duplicates(redis_service, tmp_path):
+def test_sink_restarts_from_committed_cursor_without_duplicates(
+    redis_service, tmp_path
+):
     url, _, _ = redis_service
     store = TickStore(redis.Redis.from_url(url))
     path = tmp_path / "ticks.sqlite"
@@ -144,9 +170,12 @@ def test_sink_restarts_from_committed_cursor_without_duplicates(redis_service, t
     assert restarted.transfer_batch("BBG", 100) == 100
     assert restarted.transfer_batch("BBG", 100) == 50
     assert restarted.transfer_batch("BBG", 100) == 0
-    sequences = [row[0] for row in restarted.db.execute(
-        "SELECT sequence FROM ticks WHERE symbol='BBG' ORDER BY sequence"
-    )]
+    sequences = [
+        row[0]
+        for row in restarted.db.execute(
+            "SELECT sequence FROM ticks WHERE symbol='BBG' ORDER BY sequence"
+        )
+    ]
     assert sequences == list(range(1, 251))
     restarted.close()
 
@@ -170,14 +199,18 @@ def test_sink_failed_transaction_keeps_cursor_and_retries(redis_service, tmp_pat
     sink.close()
 
 
-def test_storage_outage_does_not_block_ingestion_and_sink_catches_up(redis_service, tmp_path):
+def test_storage_outage_does_not_block_ingestion_and_sink_catches_up(
+    redis_service, tmp_path
+):
     url, _, _ = redis_service
     store = TickStore(redis.Redis.from_url(url))
     sink = SQLiteTickSink(tmp_path / "ticks.sqlite", store)
     sink.db.execute("""CREATE TRIGGER unavailable BEFORE INSERT ON ticks
         BEGIN SELECT RAISE(ABORT, 'simulated storage outage'); END""")
     for number in range(200):
-        tick, duplicate = store.publish("AAPL", f"tick-{number}", str(number + 1), number)
+        tick, duplicate = store.publish(
+            "AAPL", f"tick-{number}", str(number + 1), number
+        )
         assert tick.sequence == number + 1 and not duplicate
     with pytest.raises(sqlite3.IntegrityError):
         sink.transfer_batch("AAPL", 100)

@@ -47,22 +47,27 @@ def main() -> None:
     sequences = sorted(sequence for _, sequence in results)
     assert sequences == list(range(1, args.events + 1))
     redis_info = client.info("server")
-    print(json.dumps({
-        "events": args.events,
-        "workers": args.workers,
-        "symbol": symbol,
-        "throughput_events_per_s": round(args.events / wall_s, 1),
-        "wall_s": round(wall_s, 3),
-        "latency_ms": {
-            "p50": round(statistics.median(latencies), 3),
-            "p95": round(percentile(latencies, 0.95), 3),
-            "p99": round(percentile(latencies, 0.99), 3),
-        },
-        "python": platform.python_version(),
-        "machine": platform.machine(),
-        "redis": redis_info["redis_version"],
-        "note": "Synthetic local ingest, one Redis instance; durability depends on Redis persistence configuration.",
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "events": args.events,
+                "workers": args.workers,
+                "symbol": symbol,
+                "throughput_events_per_s": round(args.events / wall_s, 1),
+                "wall_s": round(wall_s, 3),
+                "latency_ms": {
+                    "p50": round(statistics.median(latencies), 3),
+                    "p95": round(percentile(latencies, 0.95), 3),
+                    "p99": round(percentile(latencies, 0.99), 3),
+                },
+                "python": platform.python_version(),
+                "machine": platform.machine(),
+                "redis": redis_info["redis_version"],
+                "note": "Synthetic local ingest, one Redis instance; durability depends on Redis persistence configuration.",
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

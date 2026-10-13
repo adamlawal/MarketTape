@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 from .store import TickStore
 
-
 SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9._-]{0,15}$")
 CURSOR_RE = re.compile(r"^\d+-\d+$")
 
@@ -38,7 +37,9 @@ def _cursor(value: str) -> str:
 
 
 def create_app(redis_url: str | None = None) -> FastAPI:
-    url = redis_url or os.environ.get("MARKETTAPE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    url = redis_url or os.environ.get(
+        "MARKETTAPE_REDIS_URL", "redis://127.0.0.1:6379/0"
+    )
     sync_client = redis.Redis.from_url(url)
     store = TickStore(sync_client)
     app = FastAPI(title="MarketTape", version="0.1.0")
@@ -90,7 +91,9 @@ def create_app(redis_url: str | None = None) -> FastAPI:
             while True:
                 # One bounded batch at a time. A slow client stops the read loop,
                 # while Redis retains unread events for cursor-based replay.
-                batches = await client.xread({stream_key: cursor}, count=100, block=1000)
+                batches = await client.xread(
+                    {stream_key: cursor}, count=100, block=1000
+                )
                 for _, events in batches:
                     for item in events:
                         tick = TickStore.decode(symbol, item)
@@ -99,7 +102,9 @@ def create_app(redis_url: str | None = None) -> FastAPI:
         except WebSocketDisconnect:
             pass
         except redis.RedisError:
-            await websocket.close(code=1011, reason="Redis unavailable; reconnect with last cursor")
+            await websocket.close(
+                code=1011, reason="Redis unavailable; reconnect with last cursor"
+            )
         finally:
             await client.aclose()
 

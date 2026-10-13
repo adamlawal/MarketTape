@@ -59,8 +59,17 @@ class SQLiteTickSink:
                 """INSERT OR IGNORE INTO ticks
                    (symbol, stream_id, sequence, event_id, price, source_ts_ms)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                [(t.symbol, t.stream_id, t.sequence, t.event_id, t.price,
-                  t.source_ts_ms) for t in ticks],
+                [
+                    (
+                        t.symbol,
+                        t.stream_id,
+                        t.sequence,
+                        t.event_id,
+                        t.price,
+                        t.source_ts_ms,
+                    )
+                    for t in ticks
+                ],
             )
             self.db.execute(
                 """INSERT INTO checkpoints(symbol, stream_id) VALUES (?, ?)
