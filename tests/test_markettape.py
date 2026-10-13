@@ -168,3 +168,23 @@ def test_sink_failed_transaction_keeps_cursor_and_retries(redis_service, tmp_pat
     assert sink.transfer_batch("META", 3) == 3
     assert sink.db.execute("SELECT count(*) FROM ticks").fetchone()[0] == 3
     sink.close()
+
+
+def test_storage_outage_does_not_block_ingestion_and_sink_catches_up(redis_service, tmp_path):
+    url, _, _ = redis_service
+    store = TickStore(redis.Redis.from_url(url))
+    sink = SQLiteTickSink(tmp_path / "ticks.sqlite", store)
+    sink.db.execute("""CREATE TRIGGER unavailable BEFORE INSERT ON ticks
+        BEGIN SELECT RAISE(ABORT, 'simulated storage outage'); END""")
+    for number in range(200):
+        tick, duplicate = store.publish("AAPL", f"tick-{number}", str(number + 1), number)
+        assert tick.sequence == number + 1 and not duplicate
+    with pytest.raises(sqlite3.IntegrityError):
+        sink.transfer_batch("AAPL", 100)
+    assert sink.cursor("AAPL") == "0-0"
+    assert len(store.replay("AAPL", limit=1000)) == 200
+    sink.db.execute("DROP TRIGGER unavailable")
+    assert sink.transfer_batch("AAPL", 100) == 100
+    assert sink.transfer_batch("AAPL", 100) == 100
+    assert sink.db.execute("SELECT count(*) FROM ticks").fetchone()[0] == 200
+    sink.close()

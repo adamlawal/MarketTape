@@ -62,7 +62,7 @@ the SQLite copy; Redis remains the source of truth for the API.
 The suite starts isolated Redis instances and checks 500 writes across 24 threads,
 duplicate handling, cursor pagination, WebSocket replay, and unclean Redis
 restart with AOF recovery. Sink tests cover batch restart, fault rollback,
-and retry without duplicate rows.
+retry without duplicate rows, and continued ingestion while SQLite is down.
 
 ## Local benchmark
 
