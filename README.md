@@ -1,9 +1,48 @@
 # MarketTape
 
-MarketTape is a small synthetic market-data stream. It is an engineering project,
-not a real market-data feed. It accepts price ticks, assigns a gap-free sequence
-per symbol, rejects duplicate event IDs, and offers HTTP/WebSocket replay from a
-Redis Stream cursor.
+MarketTape is a small synthetic market-data stream. It accepts price ticks,
+assigns a gap-free sequence per symbol, deduplicates event IDs, and offers
+HTTP/WebSocket replay from a Redis Stream cursor. It is an engineering project,
+not a live market-data feed.
+
+## Quick start
+
+```sh
+docker compose up --build
+curl http://127.0.0.1:8000/health
+```
+
+The Compose setup runs the API and Redis with AOF persistence in a named
+volume. It binds the API to localhost for development. Open
+`http://127.0.0.1:8000/docs` for the generated HTTP API reference.
+To also run the SQLite sink for `AAPL`:
+
+```sh
+docker compose --profile sink up --build
+```
+
+Set `MARKETTAPE_SYMBOL` to select another symbol. The sink stores SQLite data
+in a separate named volume.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    P[HTTP publishers] --> API[FastAPI]
+    API --> LUA[Redis Lua: dedup + sequence + XADD]
+    LUA --> STREAM[Redis Stream per symbol]
+    STREAM --> REPLAY[HTTP cursor replay]
+    STREAM --> WS[WebSocket subscribers]
+    STREAM --> SINK[Independent batch sink]
+    SINK --> SQLITE[(SQLite ticks + checkpoint)]
+```
+
+| Interface | Purpose |
+|---|---|
+| `POST /v1/ticks` | Publish one synthetic tick; returns the stored tick and `duplicate` flag. |
+| `GET /v1/ticks/{symbol}?after=0-0&limit=100` | Replay entries after a Redis Stream cursor. |
+| `WS /v1/stream/{symbol}?after=0-0` | Stream existing and new entries; reconnect with the last received cursor. |
+| `GET /health` | Report Redis availability. |
 
 ## Invariants
 
@@ -22,12 +61,12 @@ Redis Stream cursor.
   operators must provision and monitor disk until a safe retention policy is
   added. This is a single-node demonstration, not an HA market-data service.
 
-## Run
+## Run without Docker
 
 ```sh
 python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-redis-server --appendonly yes --appendfsync always
+.venv/bin/pip install -r requirements-dev.txt
+redis-server --appendonly yes --appendfsync always  # in another terminal
 MARKETTAPE_REDIS_URL=redis://127.0.0.1:6379/0 .venv/bin/uvicorn markettape.app:app
 ```
 
@@ -53,9 +92,14 @@ The SQLite file can be deleted and rebuilt from Redis while the stream is
 retained. Run a separate sink process per symbol. A sink failure only delays
 the SQLite copy; Redis remains the source of truth for the API.
 
-## Tests
+The local command runs the sink on the host. The optional Compose profile runs
+the same sink in a container using only runtime dependencies.
+
+## Development checks
 
 ```sh
+.venv/bin/ruff format --check markettape tests benchmarks
+.venv/bin/ruff check markettape tests benchmarks
 .venv/bin/pytest -q
 ```
 
@@ -77,3 +121,15 @@ Two runs on an arm64 Mac with Python 3.11.15 and Redis 8.6.2, AOF `everysec`,
 measured 11,627–12,319 synthetic publishes/s. The p95 client-side publish
 latency was 2.07–2.90 ms. This is a local single-Redis microbenchmark, not a
 production or multi-region result. No stock-exchange feed is involved.
+
+## Scope and limits
+
+- No authentication, retention policy, automatic symbol discovery, or
+  multi-node failover is provided. Keep the demo API on a trusted network.
+- The Compose instance uses Redis AOF `everysec`; an unclean crash can lose
+  acknowledged writes since the last fsync. The crash-recovery test uses
+  `appendfsync always` to check replay of persisted entries.
+- Each sink process handles one symbol. Run a separate process per symbol;
+  simultaneous sink processes for the same symbol are not supported.
+- Benchmark results depend on hardware, Redis persistence, load, and network
+  placement. Use the included script to measure your own setup.
