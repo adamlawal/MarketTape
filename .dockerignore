@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+appendonlydir
+tests
+benchmarks
+*.sqlite*
+*.pyc

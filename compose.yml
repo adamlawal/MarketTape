@@ -1,0 +1,55 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 1s
+      retries: 15
+
+  api:
+    build: .
+    environment:
+      MARKETTAPE_REDIS_URL: redis://redis:6379/0
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  sink:
+    build: .
+    profiles: ["sink"]
+    environment:
+      MARKETTAPE_REDIS_URL: redis://redis:6379/0
+    command:
+      - python
+      - -m
+      - markettape.sink
+      - --redis-url
+      - redis://redis:6379/0
+      - --symbol
+      - ${MARKETTAPE_SYMBOL:-AAPL}
+      - --sqlite
+      - /data/ticks.sqlite
+    volumes:
+      - sink-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:
+  sink-data:
